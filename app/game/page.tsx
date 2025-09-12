@@ -16,34 +16,6 @@ export default function GamePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewedIndices, setViewedIndices] = useState(new Set<number>());
-  const [winners, setWinners] = useState<number[]>([]);
-
-  // Function to check for 16 consecutive cards based on original IDs (only among viewed cards)
-  const checkForWinner = (viewedSet: Set<number>) => {
-    if (items.length === 0 || viewedSet.size < 16) return;
-    
-    // Get the original IDs of viewed cards only
-    const viewedOriginalIds = Array.from(viewedSet).map(index => items[index].id).sort((a, b) => a - b);
-    
-    // Check if we have exactly 16 consecutive IDs among the viewed cards
-    for (let i = 0; i <= viewedOriginalIds.length - 16; i++) {
-      const startId = viewedOriginalIds[i];
-      let consecutiveCount = 1;
-      
-      // Count how many consecutive cards we have starting from this position
-      for (let j = i + 1; j < viewedOriginalIds.length; j++) {
-        if (viewedOriginalIds[j] === viewedOriginalIds[j-1] + 1) {
-          consecutiveCount++;
-          if (consecutiveCount === 16 && !winners.includes(startId)) {
-            setWinners(prev => [...prev, startId]);
-            return; // Found a winner, stop checking
-          }
-        } else {
-          break; // Not consecutive anymore
-        }
-      }
-    }
-  };
 
   useEffect(() => {
     const fetchItems = async () => {
@@ -70,17 +42,13 @@ export default function GamePage() {
   const goToNextItem = () => {
     const newIndex = (currentItemIndex + 1) % items.length;
     setCurrentItemIndex(newIndex);
-    const newViewedIndices = new Set(viewedIndices).add(newIndex);
-    setViewedIndices(newViewedIndices);
-    checkForWinner(newViewedIndices);
+    setViewedIndices((prev) => new Set(prev).add(newIndex));
   };
 
   const goToPreviousItem = () => {
     const newIndex = (currentItemIndex - 1 + items.length) % items.length;
     setCurrentItemIndex(newIndex);
-    const newViewedIndices = new Set(viewedIndices).add(newIndex);
-    setViewedIndices(newViewedIndices);
-    checkForWinner(newViewedIndices);
+    setViewedIndices((prev) => new Set(prev).add(newIndex));
   };
 
   if (loading) {
@@ -125,32 +93,6 @@ export default function GamePage() {
           </div>
         </div>
       </header>
-
-      {/* Winner Announcement */}
-      {winners.length > 0 && (
-        <div className="w-full bg-gradient-to-r from-yellow-400 via-orange-400 to-red-400 p-4 shadow-lg z-20 border-b-4 border-white animate-pulse">
-          <div className="max-w-7xl mx-auto text-center">
-            <div className="flex items-center justify-center gap-4">
-              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center animate-bounce">
-                <svg className="w-6 h-6 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div>
-                <h2 className="text-3xl font-black text-white tracking-wider">¡LOTERÍA!</h2>
-                <p className="text-xl text-white font-bold">
-                  Winner detected! Series starting from card #{winners[winners.length - 1]}
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center animate-bounce delay-100">
-                <svg className="w-6 h-6 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <main className="flex-grow flex flex-row items-center justify-center p-4 gap-6 overflow-hidden max-h-[calc(100vh-200px)] z-10">
         {/* Back Button */}
@@ -197,7 +139,7 @@ export default function GamePage() {
             gridAutoRows: 'minmax(0, 1fr)'
           }}
         >
-          {[...items].sort((a, b) => a.id - b.id).map((item, sortedIndex) => {
+          {[...items].sort((a, b) => a.id - b.id).map((item) => {
             const originalIndex = items.findIndex(originalItem => originalItem.id === item.id);
             return (
               <img
