@@ -18,6 +18,77 @@ export default function GamePage() {
     const [viewedIndices, setViewedIndices] = useState(new Set<number>());
     const [lockedCardIds, setLockedCardIds] = useState(new Set<number>());
     const [winningSequenceStart, setWinningSequenceStart] = useState<number | null>(null);
+    const [cardOrder, setCardOrder] = useState<number[]>([]);
+    const [orderIndex, setOrderIndex] = useState(0);
+
+    // Create the predetermined card order
+    const createCardOrder = (totalCards: number, winningStart: number, lockedCards: Set<number>): number[] => {
+        // Create winning sequence array (16 cards) and shuffle them
+        const winningCards: number[] = [];
+        for (let i = 0; i < 16; i++) {
+            winningCards.push(winningStart + i);
+        }
+        // Shuffle winning cards so they don't appear in sequential order
+        const shuffledWinningCards = [...winningCards].sort(() => Math.random() - 0.5);
+
+        // Create non-winning cards array (all cards except winning and locked)
+        const nonWinningCards: number[] = [];
+        for (let i = 1; i <= totalCards; i++) {
+            if (!winningCards.includes(i) && !lockedCards.has(i)) {
+                nonWinningCards.push(i);
+            }
+        }
+        // Shuffle non-winning cards
+        const shuffledNonWinning = [...nonWinningCards].sort(() => Math.random() - 0.5);
+        
+        // Create perfectly interleaved order
+        const finalOrder: number[] = [];
+        const totalNonWinning = shuffledNonWinning.length;
+        const totalWinning = shuffledWinningCards.length;
+        
+        // Calculate the interval between winning cards
+        const interval = Math.floor(totalNonWinning / totalWinning);
+        
+        let nonWinningIndex = 0;
+        let winningIndex = 0;
+        
+        // Interleave cards: for every `interval` non-winning cards, add 1 winning card
+        while (nonWinningIndex < totalNonWinning || winningIndex < totalWinning) {
+            // Add non-winning cards
+            for (let i = 0; i < interval && nonWinningIndex < totalNonWinning; i++) {
+                finalOrder.push(shuffledNonWinning[nonWinningIndex]);
+                nonWinningIndex++;
+            }
+            
+            // Add one winning card
+            if (winningIndex < totalWinning) {
+                finalOrder.push(shuffledWinningCards[winningIndex]);
+                winningIndex++;
+            }
+        }
+        
+        // Add any remaining non-winning cards
+        while (nonWinningIndex < totalNonWinning) {
+            finalOrder.push(shuffledNonWinning[nonWinningIndex]);
+            nonWinningIndex++;
+        }
+        
+        // Ensure the last card is always from the winning sequence
+        if (totalWinning > 0 && finalOrder.length > 0) {
+            const lastCard = finalOrder[finalOrder.length - 1];
+            if (!shuffledWinningCards.includes(lastCard)) {
+                // If the last card is not a winning card, swap it with the last winning card in the array
+                const lastWinningCardIndex = finalOrder.lastIndexOf(shuffledWinningCards[shuffledWinningCards.length - 1]);
+                if (lastWinningCardIndex !== -1) {
+                    // Swap the positions
+                    finalOrder[lastWinningCardIndex] = lastCard;
+                    finalOrder[finalOrder.length - 1] = shuffledWinningCards[shuffledWinningCards.length - 1];
+                }
+            }
+        }
+        
+        return finalOrder;
+    };
 
     // Algorithm to lock cards and ensure only one winner
     const calculateLockedCards = (totalCards: number): Set<number> => {
@@ -88,6 +159,27 @@ export default function GamePage() {
         // Get the original IDs of viewed cards
         const viewedOriginalIds = Array.from(viewedSet).map(index => items[index].id).sort((a, b) => a - b);
 
+        // First, check if all non-winning cards have been viewed
+        const winningCardIds = new Set();
+        for (let i = 0; i < 16; i++) {
+            winningCardIds.add(winningSequenceStart + i);
+        }
+
+        // Get all card IDs that are NOT part of the winning sequence and NOT locked
+        const nonWinningUnlockedCardIds = items
+            .filter(item => !winningCardIds.has(item.id) && !lockedCardIds.has(item.id))
+            .map(item => item.id);
+
+        // Check if all non-winning, unlocked cards have been viewed
+        const allNonWinningViewed = nonWinningUnlockedCardIds.every(cardId => 
+            viewedOriginalIds.includes(cardId)
+        );
+
+        // Only allow winning if all non-winning cards have been viewed first
+        if (!allNonWinningViewed) {
+            return false;
+        }
+
         // Check if the winning sequence is complete
         let hasWinningSequence = true;
         for (let i = 0; i < 16; i++) {
@@ -116,10 +208,6 @@ export default function GamePage() {
                 // Calculate and set locked cards after items are loaded
                 const locked = calculateLockedCards(data.length);
                 setLockedCardIds(locked);
-
-                if (shuffledData.length > 0) {
-                    setViewedIndices(new Set([0]));
-                }
             }
             setLoading(false);
         };
@@ -127,41 +215,72 @@ export default function GamePage() {
         fetchItems();
     }, []);
 
-    const goToNextItem = () => {
-        let newIndex = (currentItemIndex + 1) % items.length;
+    // Separate useEffect to handle card order creation after winningSequenceStart is set
+    useEffect(() => {
+        if (items.length > 0 && winningSequenceStart !== null && lockedCardIds.size > 0) {
+            // Create the predetermined card order
+            const order = createCardOrder(items.length, winningSequenceStart, lockedCardIds);
+            setCardOrder(order);
 
-        // Skip locked cards
-        while (lockedCardIds.has(items[newIndex].id)) {
-            newIndex = (newIndex + 1) % items.length;
+            // Set the first item based on our predetermined order
+            const firstCardId = order[0];
+            const firstItemIndex = items.findIndex(item => item.id === firstCardId);
+            if (firstItemIndex !== -1) {
+                setCurrentItemIndex(firstItemIndex);
+                setViewedIndices(new Set([firstItemIndex]));
+                setOrderIndex(0);
+            }
+        }
+    }, [items, winningSequenceStart, lockedCardIds]);
+
+    const goToNextItem = () => {
+        if (orderIndex >= cardOrder.length - 1) {
+            // We've reached the end of our predetermined order
+            return;
         }
 
-        setCurrentItemIndex(newIndex);
-        const newViewedIndices = new Set(viewedIndices).add(newIndex);
-        setViewedIndices(newViewedIndices);
+        const nextOrderIndex = orderIndex + 1;
+        const nextCardId = cardOrder[nextOrderIndex];
+        
+        // Find the item with this ID
+        const nextItemIndex = items.findIndex(item => item.id === nextCardId);
+        
+        if (nextItemIndex !== -1) {
+            setCurrentItemIndex(nextItemIndex);
+            setOrderIndex(nextOrderIndex);
+            const newViewedIndices = new Set(viewedIndices).add(nextItemIndex);
+            setViewedIndices(newViewedIndices);
 
-        // Check for winner
-        if (checkForWinner(newViewedIndices)) {
-            // Winner found! You can add celebration logic here
-            console.log(`Winner! Sequence starting from card #${winningSequenceStart}`);
+            // Check for winner
+            if (checkForWinner(newViewedIndices)) {
+                console.log(`Winner! Sequence starting from card #${winningSequenceStart}`);
+            }
         }
     };
 
     const goToPreviousItem = () => {
-        let newIndex = (currentItemIndex - 1 + items.length) % items.length;
-
-        // Skip locked cards
-        while (lockedCardIds.has(items[newIndex].id)) {
-            newIndex = (newIndex - 1 + items.length) % items.length;
+        if (orderIndex <= 0) {
+            // We're at the beginning
+            return;
         }
 
-        setCurrentItemIndex(newIndex);
-        const newViewedIndices = new Set(viewedIndices).add(newIndex);
-        setViewedIndices(newViewedIndices);
+        const prevOrderIndex = orderIndex - 1;
+        const prevCardId = cardOrder[prevOrderIndex];
+        
+        // Find the item with this ID
+        const prevItemIndex = items.findIndex(item => item.id === prevCardId);
+        
+        if (prevItemIndex !== -1) {
+            setCurrentItemIndex(prevItemIndex);
+            setOrderIndex(prevOrderIndex);
+            // Note: We don't remove from viewedIndices when going back
+            const newViewedIndices = new Set(viewedIndices).add(prevItemIndex);
+            setViewedIndices(newViewedIndices);
 
-        // Check for winner
-        if (checkForWinner(newViewedIndices)) {
-            // Winner found! You can add celebration logic here
-            console.log(`Winner! Sequence starting from card #${winningSequenceStart}`);
+            // Check for winner (though going backwards shouldn't trigger a win)
+            if (checkForWinner(newViewedIndices)) {
+                console.log(`Winner! Sequence starting from card #${winningSequenceStart}`);
+            }
         }
     };
 
@@ -209,11 +328,11 @@ export default function GamePage() {
             </header>
 
             {/* Temporary Debug UI - Shows locked cards and winning sequence */}
-            {winningSequenceStart && (
+            {winningSequenceStart && cardOrder.length > 0 && (
                 <div className="w-full bg-black/80 text-white p-4 z-20 border-b-2 border-yellow-400">
                     <div className="max-w-7xl mx-auto">
                         <h3 className="text-lg font-bold mb-2 text-yellow-400">DEBUG INFO:</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                             <div>
                                 <span className="font-semibold text-green-400">Winning Sequence:</span>
                                 <span className="ml-2">Cards {winningSequenceStart} to {winningSequenceStart + 15}</span>
@@ -222,6 +341,18 @@ export default function GamePage() {
                                 <span className="font-semibold text-red-400">Locked Cards:</span>
                                 <span className="ml-2">[{Array.from(lockedCardIds).sort((a, b) => a - b).join(', ')}]</span>
                             </div>
+                            <div>
+                                <span className="font-semibold text-blue-400">Order Progress:</span>
+                                <span className="ml-2">{orderIndex + 1}/{cardOrder.length} cards</span>
+                            </div>
+                            <div>
+                                <span className="font-semibold text-purple-400">Current Card ID:</span>
+                                <span className="ml-2">#{currentItem?.id}</span>
+                            </div>
+                        </div>
+                        <div className="mt-2">
+                            <span className="font-semibold text-orange-400">Card Order:</span>
+                            <span className="ml-2 text-xs">[{cardOrder.slice(0, 20).join(', ')}{cardOrder.length > 20 ? '...' : ''}]</span>
                         </div>
                     </div>
                 </div>
