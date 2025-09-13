@@ -542,7 +542,6 @@ export default function GamePage() {
                 >
                     {[...items].sort((a, b) => a.id - b.id).map((item) => {
                         const originalIndex = items.findIndex(originalItem => originalItem.id === item.id);
-                        const isLocked = lockedCardIds.has(item.id);
                         return (
                             <div key={item.id} className="relative w-full h-full">
                                 <img
