@@ -16,6 +16,66 @@ export default function GamePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewedIndices, setViewedIndices] = useState(new Set<number>());
+  const [lockedCardIds, setLockedCardIds] = useState(new Set<number>());
+  const [winningSequenceStart, setWinningSequenceStart] = useState<number | null>(null);
+
+  // Algorithm to lock cards and ensure only one winner
+  const calculateLockedCards = (totalCards: number): Set<number> => {
+    const locked = new Set<number>();
+    
+    // Step 1: Select random number from 0 to 24
+    const randomNum = Math.floor(Math.random() * 25); // 0 to 24
+    
+    // Step 2: Lock initial cards based on the random number
+    if (randomNum > 0) {
+      // Lock the card that corresponds to the number (1 = lock card 1, etc)
+      locked.add(randomNum);
+    }
+    // If randomNum is 0, no initial lock
+    
+    // Lock the card 17 steps ahead
+    const secondLock = randomNum + 17;
+    if (secondLock <= totalCards) {
+      locked.add(secondLock);
+    }
+    
+    // Step 3: Set winning sequence (the 16 cards between the locks)
+    const winningStart = randomNum + 1; // First card after initial lock
+    const winningEnd = winningStart + 17; // Last card of 16-card sequence
+    setWinningSequenceStart(winningStart);
+    
+    // Step 4: Lock cards 16 steps before start and 16 steps after end
+    const lockBeforeStart = winningStart - 17;
+    if (lockBeforeStart >= 1) {
+      locked.add(lockBeforeStart);
+    }
+
+    const lockAfterEnd = winningEnd + 17;
+    if (lockAfterEnd <= totalCards) {
+      locked.add(lockAfterEnd);
+    }
+    
+    return locked;
+  };
+
+  // Check if current viewed cards form the winning sequence
+  const checkForWinner = (viewedSet: Set<number>) => {
+    if (!winningSequenceStart || viewedSet.size < 16) return false;
+    
+    // Get the original IDs of viewed cards
+    const viewedOriginalIds = Array.from(viewedSet).map(index => items[index].id).sort((a, b) => a - b);
+    
+    // Check if the winning sequence is complete
+    let hasWinningSequence = true;
+    for (let i = 0; i < 16; i++) {
+      if (!viewedOriginalIds.includes(winningSequenceStart + i)) {
+        hasWinningSequence = false;
+        break;
+      }
+    }
+    
+    return hasWinningSequence;
+  };
 
   useEffect(() => {
     const fetchItems = async () => {
@@ -29,6 +89,11 @@ export default function GamePage() {
       } else if (data) {
         const shuffledData = data.sort(() => Math.random() - 0.5);
         setItems(shuffledData);
+        
+        // Calculate and set locked cards after items are loaded
+        const locked = calculateLockedCards(data.length);
+        setLockedCardIds(locked);
+        
         if (shuffledData.length > 0) {
           setViewedIndices(new Set([0]));
         }
@@ -40,15 +105,41 @@ export default function GamePage() {
   }, []);
 
   const goToNextItem = () => {
-    const newIndex = (currentItemIndex + 1) % items.length;
+    let newIndex = (currentItemIndex + 1) % items.length;
+    
+    // Skip locked cards
+    while (lockedCardIds.has(items[newIndex].id)) {
+      newIndex = (newIndex + 1) % items.length;
+    }
+    
     setCurrentItemIndex(newIndex);
-    setViewedIndices((prev) => new Set(prev).add(newIndex));
+    const newViewedIndices = new Set(viewedIndices).add(newIndex);
+    setViewedIndices(newViewedIndices);
+    
+    // Check for winner
+    if (checkForWinner(newViewedIndices)) {
+      // Winner found! You can add celebration logic here
+      console.log(`Winner! Sequence starting from card #${winningSequenceStart}`);
+    }
   };
 
   const goToPreviousItem = () => {
-    const newIndex = (currentItemIndex - 1 + items.length) % items.length;
+    let newIndex = (currentItemIndex - 1 + items.length) % items.length;
+    
+    // Skip locked cards
+    while (lockedCardIds.has(items[newIndex].id)) {
+      newIndex = (newIndex - 1 + items.length) % items.length;
+    }
+    
     setCurrentItemIndex(newIndex);
-    setViewedIndices((prev) => new Set(prev).add(newIndex));
+    const newViewedIndices = new Set(viewedIndices).add(newIndex);
+    setViewedIndices(newViewedIndices);
+    
+    // Check for winner
+    if (checkForWinner(newViewedIndices)) {
+      // Winner found! You can add celebration logic here
+      console.log(`Winner! Sequence starting from card #${winningSequenceStart}`);
+    }
   };
 
   if (loading) {
@@ -93,6 +184,25 @@ export default function GamePage() {
           </div>
         </div>
       </header>
+
+      {/* Temporary Debug UI - Shows locked cards and winning sequence */}
+      {winningSequenceStart && (
+        <div className="w-full bg-black/80 text-white p-4 z-20 border-b-2 border-yellow-400">
+          <div className="max-w-7xl mx-auto">
+            <h3 className="text-lg font-bold mb-2 text-yellow-400">DEBUG INFO:</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="font-semibold text-green-400">Winning Sequence:</span> 
+                <span className="ml-2">Cards {winningSequenceStart} to {winningSequenceStart + 15}</span>
+              </div>
+              <div>
+                <span className="font-semibold text-red-400">Locked Cards:</span> 
+                <span className="ml-2">[{Array.from(lockedCardIds).sort((a, b) => a - b).join(', ')}]</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="flex-grow flex flex-row items-center justify-center p-4 gap-6 overflow-hidden max-h-[calc(100vh-200px)] z-10">
         {/* Back Button */}
@@ -141,17 +251,29 @@ export default function GamePage() {
         >
           {[...items].sort((a, b) => a.id - b.id).map((item) => {
             const originalIndex = items.findIndex(originalItem => originalItem.id === item.id);
+            const isLocked = lockedCardIds.has(item.id);
             return (
-              <img
-                key={item.id}
-                src={item.image_url}
-                alt=""
-                className={`w-full h-full object-contain rounded-md transition-all duration-300 ${
-                  viewedIndices.has(originalIndex) ? 'opacity-50 saturate-0' : 'opacity-100'
-                } ${
-                  originalIndex === currentItemIndex ? 'ring-4 ring-yellow-300 scale-110 shadow-xl' : ''
-                } hover:scale-105`}
-              />
+              <div key={item.id} className="relative w-full h-full">
+                <img
+                  src={item.image_url}
+                  alt=""
+                  className={`w-full h-full object-contain rounded-md transition-all duration-300 ${
+                    isLocked ? 'opacity-30 grayscale blur-sm' : 
+                    viewedIndices.has(originalIndex) ? 'opacity-50 saturate-0' : 'opacity-100'
+                  } ${
+                    originalIndex === currentItemIndex ? 'ring-4 ring-yellow-300 scale-110 shadow-xl' : ''
+                  } ${!isLocked ? 'hover:scale-105' : ''}`}
+                />
+                {isLocked && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                      <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
