@@ -9,8 +9,21 @@ const defaultUrl = process.env.VERCEL_URL
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "Next.js and Supabase Starter Kit",
-  description: "The fastest way to build apps with Next.js and Supabase",
+  title: "Christian Lottery Game",
+  description: "A faith-based interactive lottery game with Christian themes and content",
+  keywords: ["Christian", "lottery", "game", "faith", "interactive"],
+  authors: [{ name: "Jorge Venegas" }],
+  openGraph: {
+    title: "Christian Lottery Game",
+    description: "A faith-based interactive lottery game with Christian themes and content",
+    type: "website",
+    siteName: "Christian Lottery",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Christian Lottery Game",
+    description: "A faith-based interactive lottery game with Christian themes and content",
+  },
 };
 
 const geistSans = Geist({
